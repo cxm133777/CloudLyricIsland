@@ -1,0 +1,15 @@
+dist/
+*.exe
+*.pdb
+*.zip
+*.log
+备份*/
+probe.js
+ControlProbe.cs
+VerifyBackground.ps1
+VerifyControls.ps1
+Tests.cs
+使用说明.md
+*预览.png
+Thumbs.db
+.DS_Store
