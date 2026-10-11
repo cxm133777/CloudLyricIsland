@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
 public sealed partial class NetEaseControl : IDisposable {
- readonly HttpClient http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
+ readonly HttpClient http=new HttpClient(new HttpClientHandler{UseProxy=false}){Timeout=TimeSpan.FromSeconds(3)};
  readonly JavaScriptSerializer json=new JavaScriptSerializer{MaxJsonLength=8*1024*1024};string target;
  public async Task<object> Evaluate(string expression,bool awaitPromise=true){
   using(var cancel=new CancellationTokenSource(12000))using(var socket=new ClientWebSocket()){

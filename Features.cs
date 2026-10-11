@@ -28,6 +28,8 @@ public sealed partial class Island {
  readonly NetEaseControl nativeControl=new NetEaseControl();
  Dictionary<string,object> nativeState=new Dictionary<string,object>();DateTime nativeStamp,nextNativeAttempt;
  bool nativeBusy,seekSync,seekDragging,seekBusy,seekDirty,playBusy;DispatcherTimer seekTimer;Window searchWindow;
+ bool nativeConnecting;DateTime nextAutoNativeAttempt;readonly HashSet<int> autoManagedClients=new HashSet<int>();
+ string nativeConnectionMessage="";
  bool NativeFresh {get{return (DateTime.UtcNow-nativeStamp).TotalSeconds<2&&Bool(nativeState,"connected");}}
  void BrandWindow(Window w){w.Icon=BitmapFrameForBrand();}
  void PanelWindow(Window w,UIElement content,string caption){
@@ -75,9 +77,9 @@ public sealed partial class Island {
  }
  void HideClient(){var h=Native.CloudWindow();if(h!=IntPtr.Zero)Native.ShowWindow(h,0);}
  async void PollNative(){
-  if(nativeBusy||stopping||DateTime.UtcNow<nextNativeAttempt)return;nativeBusy=true;
+  if(nativeBusy||nativeConnecting||stopping||DateTime.UtcNow<nextNativeAttempt)return;nativeBusy=true;
   try{var state=Obj(await nativeControl.Call("state"));if(stopping)return;nativeState=state;nativeStamp=DateTime.UtcNow;}
-  catch{nextNativeAttempt=DateTime.UtcNow.AddSeconds(3);}finally{nativeBusy=false;}
+  catch{nextNativeAttempt=DateTime.UtcNow.AddSeconds(3);}finally{nativeBusy=false;if(!NativeFresh)AutoConnectNative();}
  }
  Dictionary<string,object> NativeTrack(){return new Dictionary<string,object>{{"id",Str(nativeState,"id")},{"duration",Num(nativeState,"duration")*1000},{"album",new Dictionary<string,object>{{"picUrl",Str(nativeState,"cover")}}}};}
  void SetProgress(double value){if(seekDragging||seekBusy||seekDirty)return;seekSync=true;progress.Value=value;seekSync=false;}
@@ -102,25 +104,14 @@ public sealed partial class Island {
    nativeState=Obj(await nativeControl.Call("play",id));nativeStamp=DateTime.UtcNow;lastError="";
   }catch(Exception ex){Notify("后台播放失败："+ex.Message+"；可在搜索窗口启用精确控制后重试");}finally{playBusy=false;}
  }
- async void EnableNative(TextBlock state){
-  state.Text="正在连接…";
-  try{await nativeControl.Call("state");state.Text="精确控制已连接，无需重启";return;}catch{}
-  var executable=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Netease","CloudMusic","cloudmusic.exe");
-  foreach(var p in Process.GetProcessesByName("cloudmusic")){try{if(p.MainModule!=null)executable=p.MainModule.FileName;}catch{}p.Dispose();}
-  if(!File.Exists(executable)){state.Text="未找到网易云安装位置，请先启动客户端";return;}
-  try{
-   foreach(var p in Process.GetProcessesByName("cloudmusic")){using(p){p.Kill();}}
-   await Task.Delay(600);Process.Start(new ProcessStartInfo(executable,"--remote-debugging-address=127.0.0.1 --remote-debugging-port=9223"){WindowStyle=ProcessWindowStyle.Hidden});
-   nextNativeAttempt=DateTime.MinValue;state.Text="网易云正在重新启动，请播放一首歌后重试";
-  }catch(Exception ex){state.Text="连接失败："+ex.Message;}
- }
+ async void EnableNative(TextBlock state){await ConnectNative(false,state);}
  void OpenSearch(){
   if(searchWindow!=null){searchWindow.Show();searchWindow.Activate();return;}
   var w=new Window{Title="云词岛 · 搜索播放",Width=760,Height=680,MinWidth=540,MinHeight=440,Topmost=true,Background=new SolidColorBrush(Color.FromRgb(25,25,33)),Foreground=Brushes.White,FontFamily=new FontFamily("Microsoft YaHei UI"),WindowStartupLocation=WindowStartupLocation.CenterScreen};searchWindow=w;
   BrandWindow(w);w.Resources=(ResourceDictionary)XamlReader.Parse(File.ReadAllText(Path.Combine(source,"SettingsTheme.xaml"),Encoding.UTF8));
   var root=new DockPanel{Margin=new Thickness(26,4,26,0)};PanelWindow(w,root,"搜索播放");var head=new StackPanel();DockPanel.SetDock(head,Dock.Top);root.Children.Add(head);
   head.Children.Add(BrandHeading("搜索音乐","找到想听的下一首"));var input=new TextBox{MinHeight=44,ToolTip="搜索歌名或歌手，按 Enter 搜索"};head.Children.Add(input);
-  var info=Label(NativeFresh?"已连接网易云 · 双击结果即可播放":"精确控制未连接 · 下方可启用（将重启网易云）",12);
+  var info=Label(NativeFresh?"已连接网易云 · 双击结果即可播放":"正在自动连接精确控制 · 可在连接选项查看或重试",12);
   var list=new ListBox{Background=Brushes.Transparent,BorderThickness=new Thickness(0)};ScrollViewer.SetHorizontalScrollBarVisibility(list,ScrollBarVisibility.Disabled);
   list.ItemTemplate=(DataTemplate)XamlReader.Parse("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><Grid Margin='4,6'><Grid.ColumnDefinitions><ColumnDefinition Width='66'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions><Border Width='54' Height='54' CornerRadius='9' Background='#343842' VerticalAlignment='Center' HorizontalAlignment='Left'><Grid><TextBlock Text='♪' Foreground='#91AAAE' FontSize='24' HorizontalAlignment='Center' VerticalAlignment='Center'/><Border CornerRadius='9'><Border.Background><ImageBrush ImageSource='{Binding Cover}' Stretch='UniformToFill'/></Border.Background></Border></Grid></Border><StackPanel Grid.Column='1' VerticalAlignment='Center'><TextBlock Text='{Binding Name}' Foreground='#F0F0F7' FontSize='15' TextTrimming='CharacterEllipsis'/><TextBlock Text='{Binding Detail}' Foreground='#9797A8' FontSize='12' Margin='0,5,0,0' TextWrapping='Wrap'/></StackPanel></Grid></DataTemplate>");
   bool busy=false;int offset=0,total=0;string lastQuery="";
