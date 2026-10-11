@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference='Stop'
-$version='1.0.0'
+$version='1.0.1'
 $output=Join-Path $PSScriptRoot 'dist'
 $stage=Join-Path $output ('CloudLyricIsland-v'+$version+'-win-x64')
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
